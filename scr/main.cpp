@@ -1,22 +1,15 @@
 #include <iostream>
+
+//#include <ChStream.h>
+
 #include "CellStorage.h"
 #include <Eigen/Dense>
 #include <vector>
 
 #include "gnuplot-iostream.h"
-
 using namespace Eigen;
-using namespace std;
 
-void multiSum(vector<double> a, vector<double> b, double factor, vector<double> &result)
-{
-  int i = 0;
-  for (int i = 0; i < a.size(); i++)
-  {
-    result[i] = factor * (a[i] + b[i]) + result[i];
-    i++;
-  }
-}
+using namespace std;
 
 struct vehicle
 {
@@ -102,12 +95,13 @@ RowVector2d simulator(double &dt, vehicle &AUV, CellStorage &FlowMap)
   int i = 0;
   while (i < steps)
   {
+
     auxTime = AUV.cellTime.getTravelTime(currentPosition(0, 0), currentPosition(0, 1));
     AUV.cellTime.setTraveltime(currentPosition(0, 0), currentPosition(0, 1), auxTime + dt);
     currentFlow = FlowMap.getFlow(currentPosition(0, 0), currentPosition(0, 1));
- 
+
     currentPosition = currentPosition + dt * (currentFlow + AUV.controlSpeed);
-   
+
     i++;
   }
   AUV.MTerror = AUV.finalPosition - currentPosition;
@@ -148,7 +142,7 @@ MatrixXd simulatorTrajectory(double &dt, vehicle &AUV, CellStorage &FlowMap)
 
 int main(int, char **)
 {
-  int numberIteration = 20;
+  int numberIteration = 200;
   double omega = 0.5;
   int numberAUVs = 18;
   int xDim = 10;
@@ -171,13 +165,29 @@ int main(int, char **)
   RowVector2d controlSpeed;
   initalFlow << 0, 0;
   FlowMap.initializeFlow(initalFlow);
-  initalFlow << 0.5, 0;
+  initalFlow << 0.15, 0;
   TrueFlowMap.initializeFlow(initalFlow);
+
+  for (int j = 1; j < 11; j++)
+  {
+    for (int i = 1; i < 11; i++)
+    {
+
+      double Fx = -(j) / (2 * 3.14 * sqrt(i * i + j * j));
+      double Fy = (i) / (2 * 3.14 * sqrt(i * i + j * j));
+      initalFlow << Fx, Fy;
+
+      std::pair<int, int> position;
+      position.first = i;
+      position.second = j;
+      TrueFlowMap.storageMap[position] = initalFlow;
+    }
+  }
+
   convertFlowMapToVector(TrueFlowMap, TrueFlowVect);
 
   double dt = 0.1;
   MatrixXd MTerror(numberAUVs, 2);
-
   // Simulation Setup
 
   double dx, dy, posx, posy;
@@ -191,7 +201,7 @@ int main(int, char **)
     {
       dx = 1;
       dy = 0;
-      controlSpeed << 0, 0.5;
+      controlSpeed << 0, 0.3;
       posx = -5.5 + (i + 1) * dx;
       posy = -5;
     }
@@ -199,14 +209,14 @@ int main(int, char **)
     {
       dx = 0;
       dy = 1;
-      controlSpeed << 0.5, 0;
+      controlSpeed << 0.3, 0;
       posx = -5;
       posy = -5.5 + (i - 7) * dy;
     }
 
     AUV->initialPosition << posx, posy;
     AUV->controlSpeed << controlSpeed;
-    AUV->travelTime = 2;
+    AUV->travelTime = 18.5;
     AUV->MTerror << 0, 0;
     AUV->finalPosition << 0, 0;
 
@@ -242,7 +252,6 @@ int main(int, char **)
     double inversNorm = 1 / travelTimeTotalAUV.norm();
     FlowVect = FlowVect + 0.5 * (inversNorm * inversNorm) * travelTimeTotalAUV * MTerror;
 
-    //
     convertVectorFlowToMap(FlowMap, FlowVect);
 
     FlowEstimationError = TrueFlowVect - FlowVect;
@@ -250,6 +259,7 @@ int main(int, char **)
 
   Gnuplot gp;
 
+  std::vector<boost::tuple<double, double, double, double>> pts_A;
   std::vector<boost::tuple<double, double, double, double>> flowField;
   std::vector<boost::tuple<double, double, double, double>> trueFlowField;
 
@@ -278,6 +288,7 @@ int main(int, char **)
 
       double Fx = TrueFlowVect(k);
       double Fy = TrueFlowVect(100 + k);
+
       trueFlowField.push_back(boost::make_tuple(
           -5.5 + i,
           -5.5 + j,
@@ -288,16 +299,9 @@ int main(int, char **)
   }
 
   gp << "set xrange [-5:5]\nset yrange [-5:5]\n";
-
-  gp << "plot '-' with vectors title 'flowField', '-' with vectors title 'trueFlowField'\n";
-
+  // '-' means read from stdin.  The send1d() function sends data to gnuplot's stdin.
+  gp << "plot '-' with vectors title 'Estimated Flow Field', '-' with vectors title 'True Flow Field'\n";
+  //	gp.send1d(pts_A);
   gp.send1d(flowField);
   gp.send1d(trueFlowField);
-
-#ifdef _WIN32
-  // For Windows, prompt for a keystroke before the Gnuplot object goes out of scope so that
-  // the gnuplot window doesn't get closed.
-  std::cout << "Press enter to exit." << std::endl;
-  std::cin.get();
-#endif
 }
